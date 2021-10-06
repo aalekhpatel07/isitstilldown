@@ -1,0 +1,8 @@
+top10milliondomains.csv
+venv
+influx-data
+domain-watcher/target
+.vscode
+.idea
+.ipynb_checkpoints
+.env
