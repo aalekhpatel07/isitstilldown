@@ -107,7 +107,7 @@ impl PingEvent {
     ) -> Self {
 
         Self {
-            resource: resource.clone(),
+            resource,
             request_init,
             response_time,
             response_code,
@@ -152,7 +152,7 @@ pub struct WatchPool {
 impl WatchPool {
 
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_subjects_and_config(&vec![], WatchConfig::default())
+        Self::with_subjects_and_config(&[], WatchConfig::default())
     }
 
     pub fn default() -> Result<Self, Box<dyn std::error::Error>> {
