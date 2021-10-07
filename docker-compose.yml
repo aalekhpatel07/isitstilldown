@@ -12,3 +12,11 @@ services:
                         - DOCKER_INFLUXDB_INIT_PASSWORD="${INFLUX_PASSWORD}"
                         - DOCKER_INFLUXDB_INIT_ORG="${INFLUX_ORG}"
                         - DOCKER_INFLUXDB_INIT_BUCKET="${INFLUX_BUCKET}"
+                hostname: influx
+        domain-watcher:
+                image: domain-watcher:latest
+                volumes:
+                        - ./domain-watcher/target:/app/target
+                        - ./domain-watcher:/app
+                build:
+                        context: ./domain-watcher
