@@ -1,0 +1,4 @@
+docker run --rm -it \
+--volume $(pwd)/domain-watcher/target:/usr/src/app/target \
+--volume $(pwd)/domain-watcher:/usr/src/app \
+domain-watcher:latest

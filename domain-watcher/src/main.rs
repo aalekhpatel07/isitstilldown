@@ -1,91 +1,78 @@
 // use ::kafka;
 mod kafka;
 
-use std::time::{Duration, Instant};
-use reqwest::{Url, StatusCode, Client as HTTPClient};
-use tokio::runtime::Runtime;
-
+use std::time::{Duration, SystemTime};
+use reqwest::{Url, StatusCode, Client as HTTPClient, Response};
+use futures::{stream, StreamExt};
+use serde::{Serialize, Deserialize};
+use serde::ser::{SerializeStruct};
+use log::{info, debug, error};
+use rmp_serde::{Serializer};
+// use tokio::runtime::Runtime;
+// use frost::BytesMut;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WatchConfig {
     ttl: Duration,
     max_attempts: Option<usize>,
-
+    concurrent_requests: usize
 }
 
 #[derive(Debug, Clone, Eq)]
 pub struct WatchableResource {
     url: Url,
-    last_ping_at: Option<Instant>,
+    last_ping_at: Option<SystemTime>,
+    active: bool
 }
+
+
+impl Serialize for WatchableResource {
+    fn serialize<S: serde::Serializer >(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut s = serializer.serialize_struct("WatchableResource", 3)?;
+        s.serialize_field("url", &self.url.as_str())?;
+        s.serialize_field("last_ping_at", &self.last_ping_at)?;
+        s.serialize_field("active", &self.active)?;
+        s.end()
+    }
+}
+
+
+// impl<'de> Deserialize<'de> for WatchableResource {
+//     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+//         deserializer.deserialize_bool(visitor: V)
+//     }
+// }
+
 
 impl PartialEq for WatchableResource {
 
     fn eq(&self, other: &Self) -> bool {
         self.url == other.url &&
+        self.active == other.active &&
         self.last_ping_at.is_some() && other.last_ping_at.is_some() &&
         self.last_ping_at.unwrap() == other.last_ping_at.unwrap()
     }
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PingEvent {
     pub(crate) resource: WatchableResource,
-    pub(crate) request_init: Option<Instant>,
+    pub(crate) request_init: Option<SystemTime>,
     pub(crate) response_time: Option<Duration>,
-    pub(crate) response_code: Option<StatusCode>,
-    pub(crate) error: Option<reqwest::Error>,
+    pub(crate) response_code: Option<u16>,
+    // pub(crate) error: Option<reqwest::Error>,
 }
 
 
 impl WatchableResource {
-    pub fn new(url: &str, last_ping_at: Option<Instant>) -> Self
+    pub fn new<S: AsRef<str>>(url: S, last_ping_at: Option<SystemTime>, active: bool) -> Self
     {
         Self {
-            url: Url::parse(url).unwrap(),
-            last_ping_at
+            url: Url::parse(url.as_ref()).unwrap(),
+            last_ping_at,
+            active
         }
-    }
-
-    pub fn ping(&mut self, client: &HTTPClient, rt: &Runtime) -> PingEvent {
-        rt.block_on(
-            async {
-
-                let start_time = Instant::now();
-                let response = client.get(self.url.clone()).send().await;
-
-                match response {
-                    Ok(response) => {
-                        // Note: If we want json, we need to enable the json feature of reqwest.
-                        
-                        // println!("{:#?}", response);
-                        //     .json::<HashMap<String, String>>()
-                        //     .await?;
-                        //     println!("{:#?}", response);
-
-                        self.last_ping_at = Some(start_time);
-                        PingEvent::new(
-                            self.clone(),
-                            Some(start_time),
-                            Some(start_time.elapsed()),
-                            Some(response.status()),
-                            None
-                        )
-                    },
-                    Err(error) => {
-                        self.last_ping_at = Some(start_time);
-                        PingEvent::new(
-                            self.clone(),
-                            Some(start_time),
-                            Some(start_time.elapsed()),
-                            None,
-                            Some(error)
-                        )
-                    }
-                }
-            }
-        )
     }
 }
 
@@ -94,7 +81,8 @@ impl Default for WatchConfig {
     fn default() -> Self {
         Self {
             ttl: Duration::from_secs_f64(5.0),
-            max_attempts: Some(2)
+            max_attempts: Some(2),
+            concurrent_requests: 16
         }
     }
 }
@@ -103,10 +91,10 @@ impl Default for WatchConfig {
 impl PingEvent {
     pub fn new(
         resource: WatchableResource,
-        request_init: Option<Instant>,
+        request_init: Option<SystemTime>,
         response_time: Option<Duration>,
-        response_code: Option<StatusCode>,
-        error: Option<reqwest::Error>
+        response_code: Option<u16>,
+        // error: Option<reqwest::Error>
     ) -> Self {
 
         Self {
@@ -114,12 +102,12 @@ impl PingEvent {
             request_init,
             response_time,
             response_code,
-            error
+            // error
         }
     }
 
     pub fn new_empty(resource: WatchableResource) -> Self {
-        Self::new(resource, None, None, None, None)
+        Self::new(resource, None, None, None)
     }
 }
 
@@ -148,48 +136,42 @@ impl Eq for PingEvent {}
 pub struct WatchPool {
     pub subjects: Vec<WatchableResource>,
     pub client: HTTPClient,
-    rt: Runtime,
     pub(crate) config: WatchConfig
 }
 
 impl WatchPool {
 
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_subjects_and_config(&[], WatchConfig::default())
+    pub fn new<S: AsRef<str>>() -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_subjects_and_config(&Vec::<S>::new(), WatchConfig::default())
     }
 
-    pub fn default() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new()
+    pub fn default<S: AsRef<str>>() -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new::<S>()
     }
 
-    pub fn with_subjects(subjects: &[&str]) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_subjects<S: AsRef<str>>(subjects: &[S]) -> Result<Self, Box<dyn std::error::Error>> {
         Self::with_subjects_and_config(subjects, WatchConfig::default())
     }
 
-    pub fn with_subjects_and_config(
-        subjects: &[&str],
+    pub fn with_subjects_and_config<S: AsRef<str>>(
+        subjects: &[S],
         config: WatchConfig
     ) -> Result<WatchPool, Box<dyn std::error::Error>> {
 
         let resources = subjects.iter()
-            .map(|s| WatchableResource::new(s, None))
+            .map(|s| WatchableResource::new(s, None, true))
             .collect::<Vec<WatchableResource>>();
-        
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-                        .enable_all()
-                        .build()?;
         
         Ok(Self {
             subjects: resources,
             client: HTTPClient::builder().build()?,
-            rt: runtime,
             config
         })
     }
 
-    pub fn add_subject(&mut self, subject: &str) -> Result<WatchableResource, Box<dyn std::error::Error>> {
+    pub fn add_subject<S: AsRef<str>>(&mut self, subject: S) -> Result<WatchableResource, Box<dyn std::error::Error>> {
         
-        let resource = WatchableResource::new(subject, None);
+        let resource = WatchableResource::new(subject, None, true);
         self.subjects.push(resource.clone());
 
         Ok(
@@ -197,7 +179,7 @@ impl WatchPool {
         )
     }
 
-    pub fn add_subjects(&mut self, subjects: &[&str]) -> Result<Vec<WatchableResource>, Box<dyn std::error::Error>> {
+    pub fn add_subjects<S: AsRef<str>>(&mut self, subjects: &[S]) -> Result<Vec<WatchableResource>, Box<dyn std::error::Error>> {
         Ok(
             subjects
             .iter()
@@ -205,96 +187,102 @@ impl WatchPool {
             .collect::<Vec<WatchableResource>>()
         )
     }
-
-    pub fn ping_all(&mut self) -> Vec<PingEvent> {
-        
-        let mut events = vec![];
-
-        for subject in self.subjects.iter_mut() {
-            events.push((*subject).ping(&self.client, &self.rt))
-        }
-        events
-    }
 }
 
 
-// #[tokio::main]
-// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//     let response = reqwest::get("https://httpbin.org/ip")
-//     .await?
-//     .json::<HashMap<String, String>>()
-//     .await?;
-//     println!("{:#?}", response);
-//     Ok(())
+const CONCURRENT_REQUESTS: usize = 16;
+const WAIT_SECONDS_BEFORE_NEXT_BATCH: u64 = 5;
+
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+
+    env_logger::init();
+    let app_config = std::sync::Arc::new(kafka::Config::new());
+    debug!("{:#?}", app_config.clone());
+
+	let kproducer = kafka::create_producer(app_config.clone());
+
+
+    let urls = std::fs::read_to_string("domains.txt")?;
+
+    let urls = urls
+        .split_whitespace()
+        .map(|x| {
+            format!("https://{}", x)
+        })
+        .collect::<Vec<String>>();
+    
+    let client = reqwest::Client::builder().build().unwrap();
+
+    let mut watch_pool = WatchPool::with_subjects_and_config(
+        &urls,
+        WatchConfig::default()
+    ).unwrap();
+
+
+
+    loop {
+
+        // TODO: Add ability to add/remove a domain from the watch pool.
+        // let (socket, _) = listener.accept().await?;
+        // tokio::spawn(async move {
+        //     watch_pool.add_subject().unwrap()
+        // }).await?;
+
+        stream::iter(&mut watch_pool.subjects)
+            // .map(|url| url.url.as_str())
+            .map(|url| {
+                let client = &client;
+
+                async move {
+
+                    let start_time: SystemTime = SystemTime::now();
+                    url.last_ping_at = Some(start_time);
+
+                    let resp: Response = client.get(url.url.as_str()).send().await?;
+                    
+                    Ok((resp, start_time, url))
+                }
+            })
+            .buffer_unordered(CONCURRENT_REQUESTS.min(urls.len()))
+            .for_each(
+                |pr: std::result::Result<(reqwest::Response, std::time::SystemTime, &mut WatchableResource), Box<dyn std::error::Error>>| async {
+                    
+                    match pr {
+                        Ok((resp, start_time, url)) => {
+
+                            let time_taken: Duration = start_time.elapsed().unwrap();
+                            info!("{:#?}", resp);
+
+                            let mut buf = Vec::new();
+                            let event = PingEvent::new(
+                                url.clone(),
+                                Some(start_time),
+                                Some(time_taken),
+                                Some(resp.status().as_u16())
+                            );
+                            
+                            event.serialize(&mut Serializer::new(&mut buf)).unwrap();
+
+                            kproducer.produce(
+                                bytes::BytesMut::from(buf.as_slice()),
+                                &app_config.kafka_topic
+                            ).await;
+
+                        },
+                        Err(e) => {
+                            error!("{:#?}", e);
+                        }
+                    }
+            })
+            .await;
+            
+            tokio::time::sleep(Duration::from_secs(WAIT_SECONDS_BEFORE_NEXT_BATCH)).await;
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//   use super::*;
 // }
-
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn create_google_watchable_resource() {
-        let google_resource = WatchableResource::new("https://www.google.com/", None);
-
-        assert_eq!(google_resource.url.as_str(), "https://www.google.com/");
-        assert_eq!(google_resource.last_ping_at, None);
-    }
-
-    #[test]
-    fn create_google_ping_event_empty() {
-        let google_resource = WatchableResource::new("https://www.google.com/", None);
-        let ping_event_empty = PingEvent::new_empty(google_resource);
-        assert_eq!(ping_event_empty.request_init, None);
-        assert_eq!(ping_event_empty.response_code, None);
-        assert_eq!(ping_event_empty.response_time, None);
-    }
-
-    #[test]
-    fn create_dummy_google_ping_event() {
-        let google_resource = WatchableResource::new("https://www.google.com/", None);
-
-        let _ping_event = PingEvent::new(
-            google_resource,
-            Some(Instant::now()),
-            Some(Duration::from_secs(2)),
-            Some(StatusCode::OK),
-            None
-        );
-    }
-
-    #[test]
-    fn create_watcher() {
-
-        let domains = [
-            "https://www.google.com/",
-            "https://www.amazon.com/",
-        ];
-
-        let watcher = WatchPool::with_subjects(&domains);
-        assert!(watcher.is_ok());
-    }
-
-    #[test]
-    fn ping_google_and_amazon() {
-        let domains = [
-            "https://www.google.com/",
-            "https://www.amazon.com/",
-            "http://www.thisdomainisdefinitelynottaken.com/"
-        ];
-
-        let watcher = WatchPool::with_subjects(&domains);
-        assert!(watcher.is_ok());
-
-        let ping_events = watcher.unwrap().ping_all();
-
-        println!("{:#?}", ping_events);
-    }
-
-}
-
-
-pub fn main() {
-    println!("Hello World!");
-}

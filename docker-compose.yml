@@ -16,7 +16,7 @@ services:
         domain-watcher:
                 image: domain-watcher:latest
                 volumes:
-                        - ./domain-watcher/target:/app/target
-                        - ./domain-watcher:/app
+                        - ./domain-watcher/target:/usr/src/app/target
+                        - ./domain-watcher:/usr/src/app
                 build:
                         context: ./domain-watcher
