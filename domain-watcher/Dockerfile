@@ -5,11 +5,13 @@ RUN apt-get install -y libsasl2-dev cmake
 WORKDIR /usr/src/app
 COPY . .
 
-RUN cargo test -- --nocapture
-RUN cargo install --path .
+# RUN cargo test -- --nocapture
+RUN cargo build --release
 
-CMD ["/bin/bash"]
-# FROM debian:buster-slim
-# RUN apt-get update && apt-get install -y extra-runtime-dependencies && rm -rf /var/lib/apt/lists/*
-# COPY --from=builder /usr/local/cargo/bin/domain-watcher /usr/local/bin/domain-watcher
-# CMD ["domain-watcher"]
+FROM rust:latest as server
+RUN apt-get update -y && apt-get upgrade -y
+RUN apt-get install -y libsasl2-dev cmake
+WORKDIR /app
+COPY --from=builder /usr/src/app/target/release/domain-watcher /usr/bin/domain-watcher
+COPY --from=builder /usr/src/app/domains.txt /app
+CMD ["domain-watcher"]

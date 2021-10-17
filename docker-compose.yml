@@ -8,15 +8,53 @@ services:
                 ports:
                         - 8086:8086
                 environment:
-                        - DOCKER_INFLUXDB_INIT_USERNAME="${INFLUX_USERNAME}"
-                        - DOCKER_INFLUXDB_INIT_PASSWORD="${INFLUX_PASSWORD}"
-                        - DOCKER_INFLUXDB_INIT_ORG="${INFLUX_ORG}"
-                        - DOCKER_INFLUXDB_INIT_BUCKET="${INFLUX_BUCKET}"
+                        DOCKER_INFLUXDB_INIT_USERNAME: "${INFLUX_USERNAME}"
+                        DOCKER_INFLUXDB_INIT_PASSWORD: "${INFLUX_PASSWORD}"
+                        DOCKER_INFLUXDB_INIT_ORG: "${INFLUX_ORG}"
+                        DOCKER_INFLUXDB_INIT_BUCKET: "${INFLUX_BUCKET}"
                 hostname: influx
+
         domain-watcher:
                 image: domain-watcher:latest
-                volumes:
-                        - ./domain-watcher/target:/usr/src/app/target
-                        - ./domain-watcher:/usr/src/app
-                build:
-                        context: ./domain-watcher
+                build: ./domain-watcher
+                environment:
+                        DOMAIN_WATCHER_DOMAIN_LIST: "domains.txt"
+                        DOMAIN_WATCHER_KAFKA_BROKERS: "kafka:9092"
+                depends_on:
+                        - kafka
+        zookeeper:
+                image: wurstmeister/zookeeper
+                ports:
+                        - "2181:2181"
+        kafka:
+                image: wurstmeister/kafka
+                ports:
+                        - "9092:9092"
+                environment:
+                        KAFKA_ADVERTISED_PORT: 9092
+                        KAFKA_ADVERTISED_HOST_NAME: "kafka"
+                        KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+                        KAFKA_CREATE_TOPICS: "pingevents:1:1"
+                depends_on:
+                        - zookeeper
+        ingester:
+                image: ingester
+                build: ./ingester
+                depends_on:
+                        - kafka
+                        - influx
+                environment:
+                        INFLUX_USER: "${INFLUX_USERNAME}"
+                        INFLUX_PASSWORD: "${INFLUX_PASSWORD}"
+                        INFLUX_DATABASE: "domain-watcher"
+                        INFLUX_HOST: "influx"
+                        INFLUX_PORT: 8086
+                        INFLUX_BUCKET: "${INFLUX_BUCKET}"
+                        INFLUX_TOKEN: "${INFLUX_TOKEN}"
+                        INFLUX_ORG: "${INFLUX_ORG}"
+                        KAFKA_BROKERS: "kafka:9092"
+        api:
+                image: api
+                build: ./api
+                depends_on:
+                        - influx

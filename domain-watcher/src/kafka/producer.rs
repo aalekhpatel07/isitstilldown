@@ -79,7 +79,7 @@ impl KafkaProducer {
 		let produce_future = self.producer.send(record, Duration::from_millis(100)).await;
 		match produce_future {
 			Ok(message) => debug!("Status: {:?}", message),
-			Err(_) => error!("Future cancelled"),
+			Err(e) => error!("Future cancelled {:#?}", e),
 		};
 	}
 }

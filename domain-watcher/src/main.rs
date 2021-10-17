@@ -1,4 +1,3 @@
-// use ::kafka;
 mod kafka;
 
 use std::time::{Duration, SystemTime};
@@ -7,9 +6,7 @@ use futures::{stream, StreamExt};
 use serde::{Serialize, Deserialize};
 use serde::ser::{SerializeStruct};
 use log::{info, debug, error};
-use rmp_serde::{Serializer};
-// use tokio::runtime::Runtime;
-// use frost::BytesMut;
+use serde_json::{Serializer, to_vec};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WatchConfig {
@@ -94,7 +91,6 @@ impl PingEvent {
         request_init: Option<SystemTime>,
         response_time: Option<Duration>,
         response_code: Option<u16>,
-        // error: Option<reqwest::Error>
     ) -> Self {
 
         Self {
@@ -102,12 +98,21 @@ impl PingEvent {
             request_init,
             response_time,
             response_code,
-            // error
         }
     }
 
     pub fn new_empty(resource: WatchableResource) -> Self {
         Self::new(resource, None, None, None)
+    }
+
+    pub fn now<S: AsRef<str>>(url: S) -> Self {
+        let curr_time = Some(SystemTime::now());
+        Self::new(
+            WatchableResource::new(url, curr_time, true),
+            curr_time,
+            None,
+            None
+        )
     }
 }
 
@@ -198,13 +203,11 @@ const WAIT_SECONDS_BEFORE_NEXT_BATCH: u64 = 5;
 async fn main() -> std::io::Result<()> {
 
     env_logger::init();
-    let app_config = std::sync::Arc::new(kafka::Config::new());
-    debug!("{:#?}", app_config.clone());
+    
+    let brokers: &str = &std::env::var("DOMAIN_WATCHER_KAFKA_BROKERS").unwrap_or("kafka:9092".to_string());
+	let kproducer = kafka::create_producer(brokers);
 
-	let kproducer = kafka::create_producer(app_config.clone());
-
-
-    let urls = std::fs::read_to_string("domains.txt")?;
+    let urls = std::fs::read_to_string(std::env::var("DOMAIN_WATCHER_DOMAIN_LIST").unwrap_or("domains.txt".to_string()))?;
 
     let urls = urls
         .split_whitespace()
@@ -241,18 +244,18 @@ async fn main() -> std::io::Result<()> {
                     url.last_ping_at = Some(start_time);
 
                     let resp: Response = client.get(url.url.as_str()).send().await?;
-                    
-                    Ok((resp, start_time, url))
+                    let time_taken: Duration = start_time.elapsed().unwrap();
+
+                    Ok((resp, start_time, time_taken, url))
                 }
             })
             .buffer_unordered(CONCURRENT_REQUESTS.min(urls.len()))
             .for_each(
-                |pr: std::result::Result<(reqwest::Response, std::time::SystemTime, &mut WatchableResource), Box<dyn std::error::Error>>| async {
+                |pr: std::result::Result<(reqwest::Response, std::time::SystemTime, std::time::Duration, &mut WatchableResource), reqwest::Error>| async {
                     
                     match pr {
-                        Ok((resp, start_time, url)) => {
+                        Ok((resp, start_time, time_taken, url)) => {
 
-                            let time_taken: Duration = start_time.elapsed().unwrap();
                             info!("{:#?}", resp);
 
                             let mut buf = Vec::new();
@@ -267,12 +270,26 @@ async fn main() -> std::io::Result<()> {
 
                             kproducer.produce(
                                 bytes::BytesMut::from(buf.as_slice()),
-                                &app_config.kafka_topic
+                                "pingevents"
                             ).await;
-
                         },
                         Err(e) => {
                             error!("{:#?}", e);
+                            let url = e.url().expect("Url should exist.");
+                            let full_url = format!(
+                                "{}://{}{}",
+                                url.scheme(),
+                                url.host().expect("Host should exist"),
+                                url.path()
+                            );
+
+                            let event = PingEvent::now(full_url);
+                            let mut buf = Vec::new();
+                            event.serialize(&mut Serializer::new(&mut buf)).unwrap();
+                            kproducer.produce(
+                                bytes::BytesMut::from(buf.as_slice()),
+                                "pingevents"
+                            ).await;
                         }
                     }
             })

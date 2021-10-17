@@ -20,3 +20,5 @@ github.com
 apple.com
 aalekhpatel.com
 blahblahwutisthis.com
+isitstilldown.com
+
