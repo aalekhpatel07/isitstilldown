@@ -5,3 +5,4 @@ domain-watcher/target
 .vscode
 .idea
 .ipynb_checkpoints
+.env
