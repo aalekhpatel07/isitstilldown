@@ -6,6 +6,7 @@ services:
                 ports:
                         - "9009:9009" # InfluxDB line protocol
                         - "9000:9000" # REST API and Web Console
+                restart: always
         domain-watcher:
                 image: domain-watcher:latest
                 build: ./domain-watcher
@@ -16,10 +17,12 @@ services:
                         DOMAIN_WATCHER_WAIT_TIME: 10 # Seconds to wait for each batch of requests.
                 depends_on:
                         - kafka
+                restart: always
         zookeeper:
                 image: wurstmeister/zookeeper
                 ports:
                         - "2181:2181"
+                restart: always
         kafka:
                 image: wurstmeister/kafka
                 ports:
@@ -31,6 +34,7 @@ services:
                         KAFKA_CREATE_TOPICS: "pingevents:1:1"
                 depends_on:
                         - zookeeper
+                restart: always
         ingester:
                 image: ingester
                 build: ./ingester
@@ -44,8 +48,10 @@ services:
                         DB_HOST: "${QUERYDB_HOST}"
                         DB_PORT: 9009
                         KAFKA_BROKERS: "kafka:9092"
+                restart: always
         api:
                 image: api
                 build: ./api
                 depends_on:
                         - "time-series-db"
+                restart: always
