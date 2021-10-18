@@ -1,19 +1,11 @@
 version: "3"
 
 services:
-        influx:
-                image: influxdb:2.0
-                volumes:
-                        - ./influx-data:/var/lib/influxdb2
+        time-series-db:
+                image: questdb/questdb
                 ports:
-                        - 8086:8086
-                environment:
-                        DOCKER_INFLUXDB_INIT_USERNAME: "${INFLUX_USERNAME}"
-                        DOCKER_INFLUXDB_INIT_PASSWORD: "${INFLUX_PASSWORD}"
-                        DOCKER_INFLUXDB_INIT_ORG: "${INFLUX_ORG}"
-                        DOCKER_INFLUXDB_INIT_BUCKET: "${INFLUX_BUCKET}"
-                hostname: influx
-
+                        - "9009:9009" # InfluxDB line protocol
+                        - "9000:9000" # REST API and Web Console
         domain-watcher:
                 image: domain-watcher:latest
                 build: ./domain-watcher
@@ -42,19 +34,16 @@ services:
                 build: ./ingester
                 depends_on:
                         - kafka
-                        - influx
+                        - "time-series-db"
                 environment:
-                        INFLUX_USER: "${INFLUX_USERNAME}"
-                        INFLUX_PASSWORD: "${INFLUX_PASSWORD}"
-                        INFLUX_DATABASE: "domain-watcher"
-                        INFLUX_HOST: "influx"
-                        INFLUX_PORT: 8086
-                        INFLUX_BUCKET: "${INFLUX_BUCKET}"
-                        INFLUX_TOKEN: "${INFLUX_TOKEN}"
-                        INFLUX_ORG: "${INFLUX_ORG}"
+                        DB_USERNAME: "${QUERYDB_USERNAME}"
+                        DB_PASSWORD: "${QUERYDB_PASSWORD}"
+                        DB_DATABASE: "${QUERYDB_DATABASE}"
+                        DB_HOST: "${QUERYDB_HOST}"
+                        DB_PORT: 9009
                         KAFKA_BROKERS: "kafka:9092"
         api:
                 image: api
                 build: ./api
                 depends_on:
-                        - influx
+                        - "time-series-db"
