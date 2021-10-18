@@ -12,6 +12,8 @@ services:
                 environment:
                         DOMAIN_WATCHER_DOMAIN_LIST: "domains.txt"
                         DOMAIN_WATCHER_KAFKA_BROKERS: "kafka:9092"
+                        DOMAIN_WATCHER_CONCURRENT_REQUESTS: 16384 # Batch request size.
+                        DOMAIN_WATCHER_WAIT_TIME: 10 # Seconds to wait for each batch of requests.
                 depends_on:
                         - kafka
         zookeeper:

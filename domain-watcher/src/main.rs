@@ -195,12 +195,12 @@ impl WatchPool {
 }
 
 
-const CONCURRENT_REQUESTS: usize = 16;
-const WAIT_SECONDS_BEFORE_NEXT_BATCH: u64 = 5;
 
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let concurrent_requests: usize = std::env::var("DOMAIN_WATCHER_CONCURRENT_REQUESTS").unwrap_or("16".to_string()).parse::<usize>().unwrap();
+    let wait_seconds_before_next_batch: u64 = std::env::var("DOMAIN_WATCHER_WAIT_TIME").unwrap_or("5".to_string()).parse::<u64>().unwrap();
 
     env_logger::init();
     
@@ -249,7 +249,7 @@ async fn main() -> std::io::Result<()> {
                     Ok((resp, start_time, time_taken, url))
                 }
             })
-            .buffer_unordered(CONCURRENT_REQUESTS.min(urls.len()))
+            .buffer_unordered(concurrent_requests.min(urls.len()))
             .for_each(
                 |pr: std::result::Result<(reqwest::Response, std::time::SystemTime, std::time::Duration, &mut WatchableResource), reqwest::Error>| async {
                     
@@ -295,7 +295,7 @@ async fn main() -> std::io::Result<()> {
             })
             .await;
             
-            tokio::time::sleep(Duration::from_secs(WAIT_SECONDS_BEFORE_NEXT_BATCH)).await;
+            tokio::time::sleep(Duration::from_secs(wait_seconds_before_next_batch)).await;
     }
 }
 
