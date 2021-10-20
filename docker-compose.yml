@@ -8,7 +8,7 @@ services:
                         - "9000:9000" # REST API and Web Console
                 restart: always
         domain-watcher:
-                image: domain-watcher:latest
+                image: isitstilldown/domain-watcher:latest
                 build: ./domain-watcher
                 environment:
                         DOMAIN_WATCHER_DOMAIN_LIST: "domains.txt"
@@ -36,7 +36,7 @@ services:
                         - zookeeper
                 restart: always
         ingester:
-                image: ingester
+                image: isitstilldown/ingester
                 build: ./ingester
                 depends_on:
                         - kafka
@@ -50,8 +50,15 @@ services:
                         KAFKA_BROKERS: "kafka:9092"
                 restart: always
         api:
-                image: api
+                image: isitstilldown/api
                 build: ./api
-                depends_on:
-                        - "time-series-db"
+                ports:
+                        - "8080:8080"
+                # depends_on:
+                        # - "time-series-db"
                 restart: always
+        # swagger:
+        #         image: swaggerapi/swagger-editor
+        #         restart: always
+        #         ports:
+        #                 - "9003:8080"

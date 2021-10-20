@@ -1,0 +1,158 @@
+swagger: "2.0"
+info:
+  description: "This is the domain tracker API that provides details about PingEvents made to various domains."
+  version: "1.0.0"
+  title: "Domain Tracker"
+  termsOfService: "http://aalekhpatel07.github.io/domain-tracker/tos/"
+  contact:
+    email: "itsme@aalekhpatel.com"
+  license:
+    name: "Apache 2.0"
+    url: "http://www.apache.org/licenses/LICENSE-2.0.html"
+host: "api.isitstilldown.com"
+basePath: "/v1"
+tags:
+- name: "events"
+  description: "Query about uptime for various domains."
+  # externalDocs:
+  #   description: "Learn about PingEvents"
+  #   url: "https://github.com/aalekhpatel07/isitstilldown/"
+schemes:
+- "https"
+- "http"
+paths:
+  /events:
+    get:
+      tags:
+      - "events"
+      summary: "Finds PingEvents by time range."
+      description: "Get PingEvents that were created in a given timeframe."
+      operationId: "findEventsbyTimeRange"
+      produces:
+      - "application/xml"
+      - "application/json"
+      parameters:
+      - name: "start"
+        in: "query"
+        description: "The start date-time stamp for the ping events."
+        required: true
+        type: "string"
+        format: "date-time"
+      - name: "end"
+        in: "query"
+        description: "The end date-time stamp for the ping events."
+        required: true
+        type: "string"
+        format: "date-time"
+      - name: "offset"
+        in: "query"
+        description: "(Optional) An offset for the resultant records of ping events."
+        required: false
+        default: 0
+        type: "integer"
+        format: "int64"
+      - name: "limit"
+        in: "query"
+        description: "(Optional) A limit for the resultant ping events. A limit of 0 implies all records will be returned."
+        required: false
+        default: 0
+        type: "integer"
+        format: "int64"
+      - name: "status"
+        in: "query"
+        description: "(Optional) The status of the responses. An error status implies the domain was not reachable at the time."
+        required: false
+        type: "string"
+        enum:
+        - "ok"
+        - "error"
+      responses:
+        "200":
+          description: "Successful query"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/PingEvent"
+        "400":
+          description: "Invalid query parameters."
+        "500":
+          description: "Server error"
+      security:
+      - api_key: []
+  /events/{domain}:
+    get:
+      tags:
+      - "events"
+      summary: "Finds PingEvents by Domain."
+      description: "The recorded PingEvents for all the domain names of the form **%domain%** will be returned."
+      operationId: "findEventsByDomain"
+      produces:
+      - "application/xml"
+      - "application/json"
+      parameters:
+      - name: "domain"
+        in: "path"
+        description: "The domain name to get ping events for."
+        required: true
+        type: "string"
+      - name: "status"
+        in: "query"
+        description: "(Optional) The status of the responses. An error status implies the domain was not reachable at the time."
+        required: false
+        type: "string"
+        enum:
+        - "ok"
+        - "error"
+      responses:
+        "200":
+          description: "Successful query"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/PingEvent"
+        "400":
+          description: "Not tracking this domain."
+        "500":
+          description: "Server error"
+      security:
+      - api_key: []
+securityDefinitions:
+  api_key:
+    type: "apiKey"
+    name: "api_key"
+    in: "header"
+definitions:
+  PingEvent:
+    type: "object"
+    properties:
+      id:
+        type: "integer"
+        format: "int64"
+      url:
+        type: "string"
+        format: "int64"
+      timestamp:
+        type: "string"
+        format: "time"
+      response_code:
+        type: "integer"
+        format: "int32"
+      response_time:
+        description: "(response time is in nanosecond precision)"
+        type: "integer"
+        format: "int64"
+    xml:
+      name: "PingEvent"
+  ApiResponse:
+    type: "object"
+    properties:
+      code:
+        type: "integer"
+        format: "int32"
+      type:
+        type: "string"
+      message:
+        type: "string"
+externalDocs:
+  description: "Find more about Domain Tracker"
+  url: "https://github.com/aalekhpatel07/domain-tracker"

@@ -1,11 +1,14 @@
-FROM python:3.9.7
-RUN apt-get update && apt-get upgrade
-RUN apt-get install -y vim iputils-ping
+FROM golang:1.10 AS build
+WORKDIR /go/src
+COPY go ./go
+COPY main.go .
 
-WORKDIR /app
+ENV CGO_ENABLED=0
+RUN go get -d -v ./...
 
-COPY . .
+RUN go build -a -installsuffix cgo -o swagger .
 
-RUN pip install -r requirements.txt
-
-CMD ["python", "main.py"]
+FROM scratch AS runtime
+COPY --from=build /go/src/swagger ./
+EXPOSE 8080/tcp
+ENTRYPOINT ["./swagger"]

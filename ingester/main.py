@@ -31,7 +31,7 @@ def convert_ping_event_to_influxdb_line_protocol(ping_event: PingEvent):
         "url": ping_event.resource.url,
         "last_ping_at": ping_event.resource.last_ping_at.as_str() if ping_event.resource.last_ping_at else -1,
         "request_init": ping_event.request_init.as_str() if ping_event.request_init else -1,
-        "response_code": ping_event.response_code
+        "response_code": ping_event.response_code if ping_event.response_code else -1
     }
 
     # logger.debug('Before fields.')
