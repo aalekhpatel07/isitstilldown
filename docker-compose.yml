@@ -4,8 +4,9 @@ services:
         time-series-db:
                 image: questdb/questdb
                 ports:
-                        - "9009:9009" # InfluxDB line protocol
-                        - "9000:9000" # REST API and Web Console
+                        - "9009" # InfluxDB line protocol
+                        - "9000" # REST API and Web Console
+                        - "8812" # Postgres Source.
                 restart: always
         domain-watcher:
                 image: isitstilldown/domain-watcher:latest
@@ -14,19 +15,19 @@ services:
                         DOMAIN_WATCHER_DOMAIN_LIST: "domains.txt"
                         DOMAIN_WATCHER_KAFKA_BROKERS: "kafka:9092"
                         DOMAIN_WATCHER_CONCURRENT_REQUESTS: 16384 # Batch request size.
-                        DOMAIN_WATCHER_WAIT_TIME: 10 # Seconds to wait for each batch of requests.
+                        DOMAIN_WATCHER_WAIT_TIME: 15 # Seconds to wait for each batch of requests.
                 depends_on:
                         - kafka
                 restart: always
         zookeeper:
                 image: wurstmeister/zookeeper
                 ports:
-                        - "2181:2181"
+                        - "2181"
                 restart: always
         kafka:
                 image: wurstmeister/kafka
                 ports:
-                        - "9092:9092"
+                        - "9092"
                 environment:
                         KAFKA_ADVERTISED_PORT: 9092
                         KAFKA_ADVERTISED_HOST_NAME: "kafka"
@@ -42,10 +43,10 @@ services:
                         - kafka
                         - "time-series-db"
                 environment:
-                        DB_USERNAME: "${QUERYDB_USERNAME}"
-                        DB_PASSWORD: "${QUERYDB_PASSWORD}"
-                        DB_DATABASE: "${QUERYDB_DATABASE}"
-                        DB_HOST: "${QUERYDB_HOST}"
+                        DB_USERNAME: "${DB_USERNAME}"
+                        DB_PASSWORD: "${DB_PASSWORD}"
+                        DB_DATABASE: "${DB_DATABASE}"
+                        DB_HOST: "${DB_HOST}"
                         DB_PORT: 9009
                         KAFKA_BROKERS: "kafka:9092"
                 restart: always
@@ -53,10 +54,20 @@ services:
                 image: isitstilldown/api
                 build: ./api
                 ports:
-                        - "8080:8080"
+                        - "8080"
+                volumes:
+                        -       "./api:/go/src"
                 # depends_on:
                         # - "time-series-db"
                 restart: always
+        frontend:
+                image: isitstilldown/frontend
+                build: ./frontend
+                ports:
+                        - "8081:8080"
+                volumes:
+                        - '/app/node_modules'
+                        - './frontend:/app'
         # swagger:
         #         image: swaggerapi/swagger-editor
         #         restart: always

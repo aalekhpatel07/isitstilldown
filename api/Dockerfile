@@ -8,7 +8,8 @@ RUN go get -d -v ./...
 
 RUN go build -a -installsuffix cgo -o swagger .
 
-FROM scratch AS runtime
+FROM centos:8 AS runtime
+RUN yum -y update && yum -y upgrade
 COPY --from=build /go/src/swagger ./
 EXPOSE 8080/tcp
-ENTRYPOINT ["./swagger"]
+CMD ["./swagger"]

@@ -78,23 +78,25 @@ def setup_socket():
 
 def main():
     consumer = kafka_consumer_blocking(brokers=brokers)
-    data_buffer = []
+    data_points = 0
 
+    buffer = []
+
+    s = setup_socket()
     for msg in consumer:
-        data = PingEvent.from_dict(msg.value)
-        data_buffer.append(data)
-        if len(data_buffer) % 10 == 0:
-            try:
-                logger.debug("len(data_buffer): %s", len(data_buffer))
-                handle_multiple_write(data_buffer)
-                data_buffer = []
-            except Exception as e:
-                logger.warning("Could not write %s datapoints.", len(data_buffer))
-                logger.error("Write error: %s", e)
-
-    if len(data_buffer):
-        handle_multiple_write(data_buffer)
-        data_buffer = []
+        try:
+            data = PingEvent.from_dict(msg.value)
+            buffer.append(convert_ping_event_to_influxdb_line_protocol(data))
+            if len(buffer) % 1_000 == 0:
+                s.sendall(("\n".join(buffer) + "\n").encode())
+                buffer = []
+            logger.info("Sent: %s", data_points)
+            data_points += 1_000
+        except socket.error as e:
+            logger.error("Socket connection error: %s", e)
+            logger.error("Total Sent: %s", data_points)
+            s.close()
+            s = setup_socket()
 
 
 if __name__ == '__main__':
