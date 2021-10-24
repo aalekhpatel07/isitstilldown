@@ -6,3 +6,4 @@ domain-watcher/target
 .idea
 .ipynb_checkpoints
 .env
+frontend
