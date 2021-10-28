@@ -49,6 +49,7 @@ services:
                         DB_HOST: "${DB_HOST}"
                         DB_PORT: 9009
                         KAFKA_BROKERS: "kafka:9092"
+                        BATCH_SIZE: 100
                 restart: always
         api:
                 image: isitstilldown/api

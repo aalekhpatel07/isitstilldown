@@ -28,25 +28,22 @@ def kafka_consumer_blocking(brokers=None):
 def convert_ping_event_to_influxdb_line_protocol(ping_event: PingEvent):
     # logger.debug('Before tags.')
     tags = {
-        "url": ping_event.resource.url,
-        "last_ping_at": ping_event.resource.last_ping_at.as_str() if ping_event.resource.last_ping_at else -1,
+        "url": ping_event.resource.url.replace("https://", "").replace("http://", ""),
         "request_init": ping_event.request_init.as_str() if ping_event.request_init else -1,
+        "response_time": ping_event.response_time.as_str() if ping_event.response_time else -1,
         "response_code": ping_event.response_code if ping_event.response_code else -1
     }
 
     # logger.debug('Before fields.')
     
-    fields = {
-        "response_time": ping_event.response_time.as_str() if ping_event.response_time else -1
-    }
     measurement = "ping_event"
     
     # logger.debug("Before tags, and fields str")
 
     tags_str = ",".join(map(lambda item: f"{item[0]}={item[1]}", tags.items()))
-    fields_str = ",".join(map(lambda item: f"{item[0]}={item[1]}", fields.items()))
-    
-    result = measurement + "," + tags_str + " " + fields_str
+    time_str = ping_event.request_init.as_str()
+
+    result = measurement + "," + tags_str + " " + time_str
     logger.debug("Influx Line Protocol: %s", result)
     return result
 
@@ -81,17 +78,20 @@ def main():
     data_points = 0
 
     buffer = []
+    BATCH_SIZE = os.getenv('BATCH_SIZE') or 100
+    BATCH_SIZE = int(BATCH_SIZE)
+    logger.info("Ingesting Ping Events in batches of size %03d", BATCH_SIZE)
 
     s = setup_socket()
     for msg in consumer:
         try:
             data = PingEvent.from_dict(msg.value)
             buffer.append(convert_ping_event_to_influxdb_line_protocol(data))
-            if len(buffer) % 1_000 == 0:
+            if len(buffer) % BATCH_SIZE == 0:
                 s.sendall(("\n".join(buffer) + "\n").encode())
                 buffer = []
-            logger.info("Sent: %s", data_points)
-            data_points += 1_000
+                logger.info("Sent: %s", data_points)
+                data_points += BATCH_SIZE
         except socket.error as e:
             logger.error("Socket connection error: %s", e)
             logger.error("Total Sent: %s", data_points)
